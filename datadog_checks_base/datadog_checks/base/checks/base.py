@@ -15,10 +15,11 @@ from os.path import basename
 from typing import TYPE_CHECKING, Any, AnyStr, Callable, Deque, Dict, List, Optional, Sequence, Tuple, Union
 
 import yaml
-from six import binary_type, iteritems, text_type
+from six import PY2, binary_type, iteritems, raise_from, text_type
 
 from ..config import is_affirmative
 from ..constants import ServiceCheck
+from ..errors import ConfigurationError
 from ..types import (
     AgentConfigType,
     Event,
@@ -62,6 +63,9 @@ if datadog_agent.get_config('disable_unsafe_yaml'):
     from ..ddyaml import monkey_patch_pyyaml
 
     monkey_patch_pyyaml()
+
+if not PY2:
+    from pydantic import ValidationError
 
 if TYPE_CHECKING:
     import ssl
@@ -241,8 +245,15 @@ class AgentCheck(object):
         # Setup metric limits
         self.metric_limiter = self._get_metric_limiter(self.name, instance=self.instance)
 
+        # Lazily load and validate config
+        self.__config = None
+        self.__shared_config = None
+
         # Functions that will be called exactly once (if successful) before the first check run
         self.check_initializations = deque([self.send_config_metadata])  # type: Deque[Callable[[], None]]
+
+        if not PY2:
+            self.check_initializations.append(self.load_configuration_models)
 
     def _get_metric_limiter(self, name, instance=None):
         # type: (str, InstanceType) -> Optional[Limiter]
@@ -363,6 +374,86 @@ class AgentCheck(object):
         # type: () -> bool
         self._log_deprecation('in_developer_mode')
         return False
+
+    @property
+    def config(self):
+        return self.__config
+
+    @property
+    def shared_config(self):
+        return self.__shared_config
+
+    def load_configuration_models(self):
+        # 'datadog_checks.<PACKAGE>.<MODULE>...'
+        module_parts = self.__module__.split('.')
+        package_path = '{}.config_models'.format('.'.join(module_parts[:2]))
+
+        # Allow for advanced functionality during the initial root validation stage
+        extra_data = {'logger': self.log, 'warning': self.warning}
+
+        if self.__shared_config is None:
+            raw_shared_config = {'__data': extra_data}
+            raw_shared_config.update(self._get_shared_config())
+
+            shared_config = self.load_configuration_model(package_path, 'SharedConfig', raw_shared_config)
+            if shared_config is not None:
+                self.__shared_config = shared_config
+
+        if self.__config is None:
+            raw_instance_config = {'__data': extra_data}
+            raw_instance_config.update(self._get_instance_config())
+
+            instance_config = self.load_configuration_model(package_path, 'InstanceConfig', raw_instance_config)
+            if instance_config is not None:
+                self.__config = instance_config
+
+    @staticmethod
+    def load_configuration_model(import_path, model_name, config):
+        try:
+            package = importlib.import_module(import_path)
+        # TODO: remove the type ignore when we drop Python 2
+        except ModuleNotFoundError as e:  # type: ignore
+            # Don't fail if there are no models
+            if str(e).startswith('No module named '):
+                return
+
+            raise
+
+        model = getattr(package, model_name, None)
+        if model is not None:
+            try:
+                config_model = model(**copy.deepcopy(config))
+            # TODO: remove the type ignore when we drop Python 2
+            except ValidationError as e:  # type: ignore
+                errors = e.errors()
+                num_errors = len(errors)
+                message_lines = [
+                    'Detected {} error{} while loading configuration model `{}`:'.format(
+                        num_errors, 's' if num_errors > 1 else '', model_name
+                    )
+                ]
+
+                for error in errors:
+                    message_lines.append(
+                        ' -> '.join(
+                            # Start array indexes at one for user-friendliness
+                            str(loc + 1) if isinstance(loc, int) else str(loc)
+                            for loc in error['loc']
+                        )
+                    )
+                    message_lines.append('  {}'.format(error['msg']))
+
+                raise_from(ConfigurationError('\n'.join(message_lines)), None)
+            else:
+                return config_model
+
+    def _get_shared_config(self):
+        # Any extra fields will be available during a config model's initial validation stage
+        return self.init_config
+
+    def _get_instance_config(self):
+        # Any extra fields will be available during a config model's initial validation stage
+        return self.instance
 
     def register_secret(self, secret):
         # type: (str) -> None

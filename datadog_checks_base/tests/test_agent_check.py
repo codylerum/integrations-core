@@ -16,6 +16,8 @@ from datadog_checks.base import __version__ as base_package_version
 from datadog_checks.base import to_native_string
 from datadog_checks.base.checks.base import datadog_agent
 
+from .utils import requires_py3
+
 
 def test_instance():
     """
@@ -840,3 +842,29 @@ class TestCheckInitializations:
         check.run()
 
         assert check.initialize.call_count == 2
+
+
+@requires_py3
+def test_load_configuration_models(dd_run_check, mocker):
+    instance = {'endpoint': 'url', 'tags': ['foo:bar'], 'proxy': {'http': 'http://1.2.3.4:9000'}}
+    init_config = {'proxy': {'https': 'https://1.2.3.4:4242'}}
+    check = AgentCheck('test', init_config, [instance])
+    check.check_id = 'test:123'
+    check.check = lambda _: None
+
+    assert check.config is None
+    assert check.shared_config is None
+
+    package = mocker.MagicMock()
+    package.InstanceConfig = mocker.MagicMock(return_value=instance)
+    package.SharedConfig = mocker.MagicMock(return_value=init_config)
+    import_module = mocker.patch('importlib.import_module', return_value=package)
+
+    dd_run_check(check)
+
+    import_module.assert_called_with('datadog_checks.base.config_models')
+    package.InstanceConfig.assert_called_once_with(**instance)
+    package.SharedConfig.assert_called_once_with(**init_config)
+
+    assert check.config is instance
+    assert check.shared_config is init_config
