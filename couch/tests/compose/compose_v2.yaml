@@ -46,3 +46,8 @@ services:
     ports:
       - "25984:5984"
       - "25986:5986"
+  sync-gateway:
+    image: couchbase/sync-gateway:latest
+    ports:
+      - "4984"
+      - "4986"
