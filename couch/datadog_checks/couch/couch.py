@@ -5,14 +5,14 @@
 from __future__ import division
 
 import math
-
+import re
 import requests
 from six import iteritems
 from six.moves.urllib.parse import quote, urljoin
 
 from datadog_checks.base import AgentCheck
 from datadog_checks.base.utils.headers import headers
-from datadog_checks.couch import errors
+from datadog_checks.couch import errors, metrics
 
 
 class CouchDb(AgentCheck):
@@ -92,13 +92,9 @@ class CouchDb(AgentCheck):
 
             if sync_gateway_url:
                 url = sync_gateway_url + '/_expvar'
-                self.get_sync_gateway_metrics(url, tags)
+                self.get_sync_gateway(url, tags)
 
         self.checker.check(instance)
-
-    def get_sync_gateway_metrics(self, url, tags):
-        gateway_metrics = self.get(url, tags, self.SG_SERVICE_CHECK_NAME)
-
 
     def get_server(self, instance):
         server = instance.get('server')
@@ -113,6 +109,49 @@ class CouchDb(AgentCheck):
         # e.g. if the yaml contains tags: but no actual tags
         return list(set(tags)) if tags else []
 
+    def get_sync_gateway(self, url, tags):
+        gateway_metrics = self.get(url, tags, self.SG_SERVICE_CHECK_NAME).get('syncgateway', {})
+        global_resource_stats = gateway_metrics.get('global', {}).get('resource_utilization')
+        for mname, mval in iteritems(global_resource_stats):
+            try:
+                self._submit_gateway_metrics(mname, mval, tags)
+            except Exception as e:
+                self.log.debug("Unable to parse metric %s with value `%s: %s`", mname, mval, str(e))
+
+        per_db_stats = gateway_metrics.get('per_db', {})
+        for db, db_groups in iteritems(per_db_stats):
+            db_tags = ['db:{}'.format(db)]
+            for subgroup, metrics in iteritems(db_groups):
+                self.log.debug("Submitting metrics for group `%s`: `%s`", subgroup, metrics)
+                for mname, mval in iteritems(metrics):
+                    try:
+                        self._submit_gateway_metrics(mname, mval, db_tags, subgroup)
+                    except Exception as e:
+                        self.log.debug("Unable to parse metric %s with value `%s`: %s", mname, mval, str(e))
+
+    def _submit_gateway_metrics(self, mname, mval, tags, prefix=None):
+        if prefix:
+            namespace = 'couch.sync_gateway.' + prefix + '.'
+        else:
+            namespace = 'couch.sync_gateway.'
+
+        if prefix == 'database' and mname in ['cache_feed', 'import_feed']:
+            # Handle cache_feed stats
+            for cfname, cfval in iteritems(mval):
+                self.gauge(namespace + mname + "." + cfname, cfval, tags)
+        elif prefix == 'gsi_views':
+            # gsi view metrics are formatted with design doc and views `sync_gateway_2.1.access_query_count`
+            # parse design doc as tag and submit rest as a metric
+            match = re.match(r'\{([^}:;]+)\}-(\w+):', mname)
+            if match:
+                design_doc_tag = match.groups()[0]
+                mname = match.groups()[0]
+                self.monotonic_count(namespace + mname, mval, tags=['design_doc_name:{}'.format(design_doc_tag)] + tags)
+
+        elif mname in metrics.COUNT_METRICS:
+            self.monotonic_count(namespace + mname, mval, tags)
+        else:
+            self.gauge(namespace + mname, mval, tags)
 
 class CouchDB1:
     """Extracts stats from CouchDB via its REST API
