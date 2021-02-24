@@ -46,8 +46,12 @@ services:
     ports:
       - "25984:5984"
       - "25986:5986"
-  sync-gateway:
+  couchdb-sync-gateway:
+    container_name: couchdb-sync-gateway
     image: couchbase/sync-gateway:latest
+    command:
+      - "-adminInterface"
+      - ":4985"
     ports:
-      - "4984"
-      - "4986"
+      - "4984:4984"
+      - "4985:4985"

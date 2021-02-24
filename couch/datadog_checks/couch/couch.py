@@ -18,7 +18,8 @@ from datadog_checks.couch import errors
 class CouchDb(AgentCheck):
     HTTP_CONFIG_REMAPPER = {'user': {'name': 'username'}}
     TIMEOUT = 5
-    SERVICE_CHECK_NAME = 'couchdb.can_connect'
+    COUCH_SERVICE_CHECK_NAME = 'couchdb.can_connect'
+    SG_SERVICE_CHECK_NAME = 'couchdb.sync_gateway.can_connect'
     SOURCE_TYPE_NAME = 'couchdb'
     MAX_DB = 50
 
@@ -26,9 +27,12 @@ class CouchDb(AgentCheck):
         super(CouchDb, self).__init__(name, init_config, instances)
         self.checker = None
 
-    def get(self, url, service_check_tags, run_check=False):
+    def get(self, url, service_check_tags, service_check_name=None, run_check=False):
         """Hit a given URL and return the parsed json"""
         self.log.debug('Fetching CouchDB stats at url: %s', url)
+
+        if service_check_name is None:
+            service_check_name = self.COUCH_SERVICE_CHECK_NAME
 
         # Override Accept request header so that failures are not redirected to the Futon web-ui
         request_headers = headers(self.agentConfig)
@@ -39,29 +43,30 @@ class CouchDb(AgentCheck):
             r.raise_for_status()
             if run_check:
                 self.service_check(
-                    self.SERVICE_CHECK_NAME,
+                    service_check_name,
                     AgentCheck.OK,
                     tags=service_check_tags,
                     message='Connection to %s was successful' % url,
                 )
         except requests.exceptions.Timeout as e:
             self.service_check(
-                self.SERVICE_CHECK_NAME,
+                service_check_name,
                 AgentCheck.CRITICAL,
                 tags=service_check_tags,
                 message="Request timeout: {0}, {1}".format(url, e),
             )
             raise
         except requests.exceptions.HTTPError as e:
-            self.service_check(self.SERVICE_CHECK_NAME, AgentCheck.CRITICAL, tags=service_check_tags, message=str(e))
+            self.service_check(service_check_name, AgentCheck.CRITICAL, tags=service_check_tags, message=str(e))
             raise
         except Exception as e:
-            self.service_check(self.SERVICE_CHECK_NAME, AgentCheck.CRITICAL, tags=service_check_tags, message=str(e))
+            self.service_check(service_check_name, AgentCheck.CRITICAL, tags=service_check_tags, message=str(e))
             raise
         return r.json()
 
     def check(self, instance):
         server = self.get_server(instance)
+        sync_gateway_url = self.instance.get("sync_gateway_url")
         if self.checker is None:
             name = instance.get('name', server)
             tags = ["instance:{0}".format(name)] + self.get_config_tags(instance)
@@ -85,7 +90,15 @@ class CouchDb(AgentCheck):
                 # v2 of the CouchDB check supports versions 2 and higher of Couch
                 self.checker = CouchDB2(self)
 
+            if sync_gateway_url:
+                url = sync_gateway_url + '/_expvar'
+                self.get_sync_gateway_metrics(url, tags)
+
         self.checker.check(instance)
+
+    def get_sync_gateway_metrics(self, url, tags):
+        gateway_metrics = self.get(url, tags, self.SG_SERVICE_CHECK_NAME)
+
 
     def get_server(self, instance):
         server = instance.get('server')
