@@ -91,7 +91,7 @@ class CouchDb(AgentCheck):
                 self.checker = CouchDB2(self)
 
             if sync_gateway_url:
-                url = sync_gateway_url + '/_expvar'
+                url = urljoin(sync_gateway_url, '/_expvar')
                 self.get_sync_gateway(url, tags)
 
         self.checker.check(instance)
@@ -120,7 +120,7 @@ class CouchDb(AgentCheck):
 
         per_db_stats = gateway_metrics.get('per_db', {})
         for db, db_groups in iteritems(per_db_stats):
-            db_tags = ['db:{}'.format(db)]
+            db_tags = ['db:{}'.format(db)] + tags
             for subgroup, metrics in iteritems(db_groups):
                 self.log.debug("Submitting metrics for group `%s`: `%s`", subgroup, metrics)
                 for mname, mval in iteritems(metrics):
@@ -130,28 +130,28 @@ class CouchDb(AgentCheck):
                         self.log.debug("Unable to parse metric %s with value `%s`: %s", mname, mval, str(e))
 
     def _submit_gateway_metrics(self, mname, mval, tags, prefix=None):
+        namespace = '.'.join(['couchdb', 'sync_gateway'])
         if prefix:
-            namespace = 'couch.sync_gateway.' + prefix + '.'
-        else:
-            namespace = 'couch.sync_gateway.'
+            namespace = '.'.join([namespace, prefix])
 
         if prefix == 'database' and mname in ['cache_feed', 'import_feed']:
             # Handle cache_feed stats
             for cfname, cfval in iteritems(mval):
-                self.gauge(namespace + mname + "." + cfname, cfval, tags)
+                self.gauge('.'.join([namespace, mname, cfname]), cfval, tags)
         elif prefix == 'gsi_views':
             # gsi view metrics are formatted with design doc and views `sync_gateway_2.1.access_query_count`
             # parse design doc as tag and submit rest as a metric
             match = re.match(r'\{([^}:;]+)\}-(\w+):', mname)
             if match:
                 design_doc_tag = match.groups()[0]
-                mname = match.groups()[0]
-                self.monotonic_count(namespace + mname, mval, tags=['design_doc_name:{}'.format(design_doc_tag)] + tags)
+                gsi_tags = ['design_doc_name:{}'.format(design_doc_tag)] + tags
+                ddname = match.groups()[0]
+                self.monotonic_count('.'.join([namespace, ddname]), tags=gsi_tags)
 
         elif mname in metrics.COUNT_METRICS:
-            self.monotonic_count(namespace + mname, mval, tags)
+            self.monotonic_count('.'.join([namespace, mname]), mval, tags)
         else:
-            self.gauge(namespace + mname, mval, tags)
+            self.gauge('.'.join([namespace, mname]), mval, tags)
 
 class CouchDB1:
     """Extracts stats from CouchDB via its REST API
