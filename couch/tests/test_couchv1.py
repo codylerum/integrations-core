@@ -39,7 +39,7 @@ def _assert_check(aggregator, assert_device_tag):
 
     # 2 service checks: 1 per DB + 1 to get the version
     aggregator.assert_service_check(
-        CouchDb.SERVICE_CHECK_NAME, status=CouchDb.OK, tags=common.BASIC_CONFIG_TAGS, count=2
+        CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.OK, tags=common.BASIC_CONFIG_TAGS, count=2
     )
 
 
@@ -57,7 +57,7 @@ def test_bad_config(aggregator, check, instance):
         # the server instance is invalid
         check.check(common.BAD_CONFIG)
         aggregator.assert_service_check(
-            CouchDb.SERVICE_CHECK_NAME, status=CouchDb.CRITICAL, tags=common.BAD_CONFIG_TAGS, count=1
+            CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.CRITICAL, tags=common.BAD_CONFIG_TAGS, count=1
         )
 
     check.get = mock.MagicMock(return_value={'version': '0.1.0'})
@@ -65,7 +65,7 @@ def test_bad_config(aggregator, check, instance):
         # the server has an unsupported version
         check.check(common.BAD_CONFIG)
         aggregator.assert_service_check(
-            CouchDb.SERVICE_CHECK_NAME, status=CouchDb.CRITICAL, tags=common.BAD_CONFIG_TAGS, count=1
+            CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.CRITICAL, tags=common.BAD_CONFIG_TAGS, count=1
         )
 
 
@@ -122,4 +122,4 @@ def test_config_tags(aggregator, check, instance):
     for gauge in common.CHECK_GAUGES:
         aggregator.assert_metric_has_tag(gauge, TEST_TAG)
 
-    aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, tags=common.BASIC_CONFIG_TAGS + [TEST_TAG])
+    aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, tags=common.BASIC_CONFIG_TAGS + [TEST_TAG])

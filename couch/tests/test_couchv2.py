@@ -109,12 +109,12 @@ def _assert_check(aggregator, gauges):
 
     expected_tags = ["instance:{}".format(common.NODE1["name"])]
     # One for the version, one for the server stats
-    aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=2)
+    aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=2)
 
     for node in [common.NODE2, common.NODE3]:
         expected_tags = ["instance:{}".format(node["name"])]
         # One for the server stats, the version is already loaded
-        aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=2)
+        aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=2)
 
     # Assert replication task metrics
     for gauge in gauges["replication_tasks_gauges"]:
@@ -210,12 +210,12 @@ def test_check_without_names(aggregator, gauges):
 
     expected_tags = ["instance:{}".format(config["server"])]
     # One for the version, one for the server stats
-    aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=1)
+    aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=1)
 
     for node in [common.NODE2, common.NODE3]:
         expected_tags = ["instance:{}".format(node["name"])]
         # One for the server stats, the version is already loaded
-        aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=1)
+        aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, status=CouchDb.OK, tags=expected_tags, count=1)
 
     aggregator.assert_all_metrics_covered()
 
@@ -440,4 +440,4 @@ def test_config_tags(aggregator, gauges):
     for gauge in gauges["by_db_gauges"]:
         aggregator.assert_metric_has_tag(gauge, TEST_TAG)
     expected_tags = ["instance:{0}".format(config["name"]), TEST_TAG]
-    aggregator.assert_service_check(CouchDb.SERVICE_CHECK_NAME, tags=expected_tags)
+    aggregator.assert_service_check(CouchDb.COUCH_SERVICE_CHECK_NAME, tags=expected_tags)
