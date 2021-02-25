@@ -27,7 +27,7 @@ class CouchDb(AgentCheck):
         super(CouchDb, self).__init__(name, init_config, instances)
         self.checker = None
 
-    def get(self, url, service_check_tags, service_check_name=None, run_check=False):
+    def get(self, url, service_check_tags, run_check=False, service_check_name=None):
         """Hit a given URL and return the parsed json"""
         self.log.debug('Fetching CouchDB stats at url: %s', url)
 
@@ -110,7 +110,7 @@ class CouchDb(AgentCheck):
         return list(set(tags)) if tags else []
 
     def get_sync_gateway(self, url, tags):
-        gateway_metrics = self.get(url, tags, self.SG_SERVICE_CHECK_NAME).get('syncgateway', {})
+        gateway_metrics = self.get(url, tags, service_check_name=self.SG_SERVICE_CHECK_NAME).get('syncgateway', {})
         global_resource_stats = gateway_metrics.get('global', {}).get('resource_utilization')
         for mname, mval in iteritems(global_resource_stats):
             try:
