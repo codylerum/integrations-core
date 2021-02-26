@@ -6,6 +6,7 @@ from __future__ import division
 
 import math
 import re
+
 import requests
 from six import iteritems
 from six.moves.urllib.parse import quote, urljoin
@@ -121,9 +122,9 @@ class CouchDb(AgentCheck):
         per_db_stats = gateway_metrics.get('per_db', {})
         for db, db_groups in iteritems(per_db_stats):
             db_tags = ['db:{}'.format(db)] + tags
-            for subgroup, metrics in iteritems(db_groups):
+            for subgroup, db_metrics in iteritems(db_groups):
                 self.log.debug("Submitting metrics for group `%s`: `%s`", subgroup, metrics)
-                for mname, mval in iteritems(metrics):
+                for mname, mval in iteritems(db_metrics):
                     try:
                         self._submit_gateway_metrics(mname, mval, db_tags, subgroup)
                     except Exception as e:
@@ -152,6 +153,7 @@ class CouchDb(AgentCheck):
             self.monotonic_count('.'.join([namespace, mname]), mval, tags)
         else:
             self.gauge('.'.join([namespace, mname]), mval, tags)
+
 
 class CouchDB1:
     """Extracts stats from CouchDB via its REST API
@@ -304,10 +306,10 @@ class CouchDB2:
                     else:
                         self.gauge("{0}.{1}.size".format(prefix, key), val, queue_tags)
             elif key == "distribution":
-                for node, metrics in iteritems(value):
+                for node, n_metrics in iteritems(value):
                     dist_tags = list(tags)
                     dist_tags.append("node:{0}".format(node))
-                    self._build_system_metrics(metrics, dist_tags, "{0}.{1}".format(prefix, key))
+                    self._build_system_metrics(n_metrics, dist_tags, "{0}.{1}".format(prefix, key))
             elif isinstance(value, dict):
                 self._build_system_metrics(value, tags, "{0}.{1}".format(prefix, key))
             else:
